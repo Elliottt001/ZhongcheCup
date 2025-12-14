@@ -1,4 +1,4 @@
-from signal_parse import DisplacementSeries, analyze_displacement_series
+from signal import DisplacementSeries, analyze_displacement_series
 
 import numpy as np
 

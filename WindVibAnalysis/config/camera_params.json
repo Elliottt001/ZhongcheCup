@@ -1,0 +1,19 @@
+{
+  "camera": {
+    "K": [
+      [1000.0, 0.0, 960.0],
+      [0.0, 1000.0, 540.0],
+      [0.0, 0.0, 1.0]
+    ],
+    "D": [0.0, 0.0, 0.0, 0.0, 0.0]
+  },
+  "fan_geometry": {
+    "drone_height_m": 130.0,
+    "leaf_angle_deg": 15.0,
+    "pixel_to_mm_ratio": 0.05
+  },
+  "tracking": {
+    "marker_id": 42,
+    "subpix_win_size": 11
+  }
+}
