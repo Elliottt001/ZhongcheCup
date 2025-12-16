@@ -5,7 +5,7 @@ import os
 import time
 import zipfile
 from datetime import datetime
-from processor import VideoProcessor
+from Frontend.processor import VideoProcessor
 from pathlib import Path
 import tkinter as tk
 from tkinter import filedialog
