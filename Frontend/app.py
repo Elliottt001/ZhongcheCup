@@ -9,6 +9,41 @@ from processor import VideoProcessor
 from pathlib import Path
 import tkinter as tk
 from tkinter import filedialog
+import sys
+import matplotlib.pyplot as plt
+import matplotlib
+matplotlib.use('Agg')  # 使用非交互式后端
+
+# 添加Backend路径到sys.path
+backend_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'Backend')
+if backend_path not in sys.path:
+    sys.path.insert(0, backend_path)
+
+# 导入Backend模块
+try:
+    from WindVibAnalysis.main_workflow import run_image_analysis
+    from WindVibAnalysis.data_structs.analysis_data import DisplacementSeries as ImageDisplacementSeries
+    BACKEND_AVAILABLE = True
+except ImportError as e:
+    BACKEND_AVAILABLE = False
+    st.warning(f"⚠️ Backend模块导入失败: {e}")
+
+# 导入信号分析模块
+try:
+    # 注意：需要导入Backend目录下的signal模块
+    signal_module_path = os.path.join(backend_path, 'signal.py')
+    if os.path.exists(signal_module_path):
+        import importlib.util
+        spec = importlib.util.spec_from_file_location("signal_analysis", signal_module_path)
+        signal_analysis = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(signal_analysis)
+        SignalDisplacementSeries = signal_analysis.DisplacementSeries
+        analyze_displacement_series = signal_analysis.analyze_displacement_series
+        SIGNAL_ANALYSIS_AVAILABLE = True
+    else:
+        SIGNAL_ANALYSIS_AVAILABLE = False
+except Exception as e:
+    SIGNAL_ANALYSIS_AVAILABLE = False
 
 # --- 页面配置 ---
 st.set_page_config(
@@ -164,6 +199,45 @@ st.markdown("""
         border-radius: 5px;
         margin: 1rem 0;
     }
+
+    /* 分析结果卡片样式 */
+    .result-card {
+        background: rgba(255, 255, 255, 0.15);
+        border-radius: 10px;
+        padding: 1.5rem;
+        margin: 1rem 0;
+        border: 1px solid rgba(255, 255, 255, 0.3);
+        box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
+    }
+
+    /* 参数设置区域样式 */
+    .param-section {
+        background: rgba(255, 255, 255, 0.05);
+        border-radius: 8px;
+        padding: 1rem;
+        margin: 0.5rem 0;
+        border: 1px solid rgba(255, 255, 255, 0.1);
+    }
+
+    /* 步骤指示器样式 */
+    .step-indicator {
+        display: flex;
+        align-items: center;
+        margin: 1rem 0;
+        padding: 0.5rem;
+        background: rgba(76, 175, 80, 0.1);
+        border-radius: 5px;
+        border-left: 3px solid #4CAF50;
+    }
+
+    /* 图表容器样式 */
+    .chart-container {
+        background: rgba(255, 255, 255, 0.95);
+        border-radius: 10px;
+        padding: 1rem;
+        margin: 1rem 0;
+        box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
+    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -243,30 +317,13 @@ with st.sidebar:
         "选择输出格式", 
         ["返回帧序列（Backend格式）", "保存图像文件"], 
         index=0,
-        help="**帧序列模式（推荐）**: 输出稳定处理后的图像帧列表，格式为list[np.ndarray]，可直接用于Backend振动分析模块。\n\n**图像文件模式**: 生成JPG图像序列文件，适合查看和存档。"
+        help="**帧序列模式（推荐）**: 直接读取视频帧列表，格式为list[np.ndarray]，可直接用于Backend振动分析模块。\n\n**图像文件模式**: 生成JPG图像序列文件，适合查看和存档。"
     )
     
     st.markdown("---")
 
-    st.subheader("1. 相机内参 (Camera Matrix K)")
-    st.info("请输入标定后的相机内参矩阵数据")
-    col1, col2 = st.columns(2)
-    fx = col1.number_input("fx (焦距 x)", value=1000.0)
-    fy = col2.number_input("fy (焦距 y)", value=1000.0)
-    cx = col1.number_input("cx (主点 x)", value=960.0)
-    cy = col2.number_input("cy (主点 y)", value=540.0)
-
-    st.subheader("2. 畸变系数 (Distortion Coeffs)")
-    st.info("径向和切向畸变参数")
-    k1 = st.number_input("k1", value=0.0)
-    k2 = st.number_input("k2", value=0.0)
-    p1 = st.number_input("p1", value=0.0)
-    p2 = st.number_input("p2", value=0.0)
-    k3 = st.number_input("k3", value=0.0)
-
-    st.subheader("3. 处理设置")
-    enable_stabilization = st.checkbox("启用视频稳像", value=True, 
-                                       help="启用后会对视频进行稳像处理，消除相机抖动")
+    st.subheader("📋 处理设置")
+    st.info("💡 **简化模式**：系统直接读取视频帧，不进行畸变校正和稳像处理，处理速度更快。")
     
     # 仅在图像文件模式下显示时间间隔设置
     if output_mode == "保存图像文件":
@@ -277,26 +334,24 @@ with st.sidebar:
     else:
         time_interval = 0.0  # 帧序列模式不使用间隔
         create_zip = False
-    
-    reduce_quality = st.checkbox("启用快速模式 (降低处理质量)", value=False, 
-                                 help="启用后处理速度更快，但可能影响图像质量")
 
     st.markdown("---")
     
-    # 性能优化提示
-    with st.expander("⚡ 性能优化提示"):
+    # 性能说明
+    with st.expander("⚡ 性能说明"):
         st.markdown("""
-        **优化措施已启用：**
-        - ✅ 预计算畸变校正映射表（提速10倍+）
-        - ✅ 降低稳像计算频率（每5帧计算一次）
-        - ✅ 缩小图像进行特征检测（50%分辨率）
-        - ✅ 减少特征点数量（100个）
-        - ✅ 优化光流算法参数
+        **简化处理流程：**
+        - ✅ 直接读取视频帧，无额外处理
+        - ✅ 无畸变校正计算
+        - ✅ 无稳像处理计算
+        - ✅ 极速处理，仅受视频读取速度限制
         
-        **预计处理时间：**
-        - 100MB视频: ~60秒
-        - 500MB视频: ~90秒
-        - 1GB视频: ~120秒
+        **预计处理时间（大幅缩短）：**
+        - 100MB视频: ~10-20秒
+        - 500MB视频: ~30-50秒
+        - 1GB视频: ~60-90秒
+        
+        **注意：** 如果视频需要畸变校正或稳像处理，请在Backend模块中配置相关参数。
         """)
     
     st.markdown("---")
@@ -306,16 +361,29 @@ with st.sidebar:
 # --- 主界面 ---
 with st.container():
     st.markdown('<div class="card fade-in">', unsafe_allow_html=True)
-    st.title("🚁 风机叶片视频预处理系统")
-    st.markdown("### Video Preprocessing: Stabilization & Frame Extraction")
+    
+    # 标题区域 - 更现代化的设计
+    title_col1, title_col2 = st.columns([3, 1])
+    with title_col1:
+        st.title("🚁 风机叶片视频预处理与振动分析系统")
+        st.markdown("### Video Preprocessing & Vibration Analysis Platform")
+    with title_col2:
+        if BACKEND_AVAILABLE and SIGNAL_ANALYSIS_AVAILABLE:
+            st.success("✅ Backend已连接")
+        else:
+            st.warning("⚠️ Backend未连接")
+    
+    st.markdown("---")
     
     # 突出显示默认输出模式
     if output_mode == "返回帧序列（Backend格式）":
         st.markdown("""
         <div class="highlight-box">
         <h4>🎯 当前模式：帧序列输出（Backend兼容格式）</h4>
-        <p>系统将输出稳定处理后的图像帧序列，格式为 <code>list[np.ndarray]</code>，可直接用于Backend振动分析模块。</p>
-        <p><strong>输出存储位置：</strong></p>
+        <p>系统将直接读取视频帧序列，格式为 <code>list[np.ndarray]</code>，可直接用于Backend振动分析模块。</p>
+        <p><strong>⚡ 简化处理：</strong>已去除畸变校正和稳像处理，处理速度大幅提升！</p>
+        <p><strong>🔬 完整分析：</strong>提取帧序列后，可直接在界面中进行Backend振动分析，包括图像跟踪、位移提取和频谱分析。</p>
+        <p><strong>💾 输出存储位置：</strong></p>
         <ul>
             <li>✅ <strong>内存存储</strong>：存储在session_state中，可在当前会话中直接使用</li>
             <li>💾 <strong>可选保存</strong>：可保存为.npz格式文件到本地磁盘</li>
@@ -328,6 +396,7 @@ with st.container():
         <div class="info-box">
         <h4>📁 当前模式：图像文件输出</h4>
         <p>系统将生成JPG图像序列文件，保存到指定的输出文件夹。</p>
+        <p><strong>💡 提示：</strong>如需进行Backend振动分析，请切换到"返回帧序列（Backend格式）"模式。</p>
         </div>
         """, unsafe_allow_html=True)
     
@@ -459,10 +528,6 @@ if uploaded_file is not None:
                     progress_bar.progress(progress)
                     status_display.info(status_text)
                 
-                # 构建矩阵
-                K = np.array([[fx, 0, cx], [0, fy, cy], [0, 0, 1]])
-                D = np.array([k1, k2, p1, p2, k3])
-
                 # 保存上传的视频到临时文件
                 tfile = tempfile.NamedTemporaryFile(delete=False, suffix=os.path.splitext(uploaded_file.name)[1])
                 tfile.write(uploaded_file.read())
@@ -473,28 +538,28 @@ if uploaded_file is not None:
                 try:
                     add_log("正在初始化处理引擎...")
                     
-                    # 实例化处理器
-                    processor = VideoProcessor(K, D, enable_stabilization)
+                    # 实例化处理器（简化版，无需参数）
+                    processor = VideoProcessor()
                     add_log("处理器初始化完成")
 
                     # 执行处理
-                    add_log("开始处理视频...")
+                    add_log("开始读取视频帧...")
                     return_frames = (output_mode == "返回帧序列（Backend格式）")
-                    # 帧序列模式：返回稳定处理后的图像帧，格式符合Backend要求
+                    # 帧序列模式：直接返回视频帧，格式符合Backend要求
                     result = processor.process_video(
                         video_path, output_folder, time_interval, 
-                        update_progress, enable_stabilization, 
+                        update_progress, None,  # enable_stabilization参数已废弃
                         create_zip if not return_frames else False,  # 帧序列模式不创建zip
                         return_frames  # True时返回list[np.ndarray]和fps，符合Backend输入格式
                     )
                     
                     if return_frames:
-                        # 返回格式： stabilized_frames: list[np.ndarray], fps: int
+                        # 返回格式： frames: list[np.ndarray], fps: int
                         # 符合Backend的run_image_analysis接口要求
                         stabilized_frames, fps = result
                         # 确保fps是整数类型（Backend期望int）
                         fps = int(fps)
-                        result_msg = f"处理完成！共提取 {len(stabilized_frames)} 帧稳定序列（格式：list[np.ndarray]，可直接用于Backend分析）。"
+                        result_msg = f"处理完成！共提取 {len(stabilized_frames)} 帧（格式：list[np.ndarray]，可直接用于Backend分析）。"
                         zip_path = None
                     else:
                         result_msg, zip_path = result
@@ -527,7 +592,7 @@ if uploaded_file is not None:
                         st.markdown("""
                         <div class="highlight-box">
                         <h4>✅ 帧序列提取成功！</h4>
-                        <p>稳定处理后的图像帧序列已准备就绪，格式符合Backend要求。</p>
+                        <p>视频帧序列已准备就绪，格式符合Backend要求。</p>
                         </div>
                         """, unsafe_allow_html=True)
                         
@@ -540,6 +605,7 @@ if uploaded_file is not None:
                             st.write(f"- **分辨率**: {stabilized_frames[0].shape[1]}×{stabilized_frames[0].shape[0]} 像素")
                             st.write(f"- **数据类型**: `list[np.ndarray]`")
                             st.write(f"- **颜色格式**: OpenCV BGR格式")
+                            st.write(f"- **处理方式**: 直接读取原始视频帧（无畸变校正/稳像处理）")
                         
                         with info_col2:
                             st.markdown("**✅ 格式验证**")
@@ -615,7 +681,313 @@ if uploaded_file is not None:
                                 else:
                                     st.warning("⚠️ 请输入保存路径")
                         
-                        st.success("✅ 稳定帧序列已存储，格式符合Backend要求，可直接用于振动分析！")
+                        st.success("✅ 视频帧序列已存储，格式符合Backend要求，可直接用于振动分析！")
+                        
+                        # Backend分析功能
+                        if BACKEND_AVAILABLE and SIGNAL_ANALYSIS_AVAILABLE:
+                            st.markdown("---")
+                            
+                            # 使用卡片样式包装分析区域
+                            st.markdown('<div class="result-card">', unsafe_allow_html=True)
+                            st.markdown("### 🔬 Backend振动分析")
+                            st.info("💡 使用Backend模块进行完整的振动分析，包括图像跟踪、位移提取和频谱分析。")
+                            
+                            # 分析参数设置 - 使用更清晰的布局
+                            st.markdown("#### ⚙️ 分析参数")
+                            
+                            # 第一行：振动方向和基本参数
+                            param_row1_col1, param_row1_col2 = st.columns(2)
+                            with param_row1_col1:
+                                st.markdown('<div class="param-section">', unsafe_allow_html=True)
+                                vibration_direction = st.selectbox(
+                                    "🎯 振动方向",
+                                    ["切向 (Flapwise)", "轴向 (Edgewise)"],
+                                    help="**切向 (Flapwise)**: 垂直于叶片平面的振动\n**轴向 (Edgewise)**: 沿叶片长度方向的振动"
+                                )
+                                st.markdown('</div>', unsafe_allow_html=True)
+                            
+                            with param_row1_col2:
+                                st.markdown('<div class="param-section">', unsafe_allow_html=True)
+                                A_pp_limit = st.number_input("⚠️ 异常阈值 (mm)", min_value=0.0, value=10.0, step=1.0,
+                                                            help="峰峰值超过此值将标记为异常状态")
+                                st.markdown('</div>', unsafe_allow_html=True)
+                            
+                            # 第二行：滤波器参数
+                            st.markdown("**🔧 带通滤波器设置**")
+                            filter_col1, filter_col2 = st.columns(2)
+                            with filter_col1:
+                                low_cut = st.number_input("低截止频率 (Hz)", min_value=0.0, value=0.2, step=0.1,
+                                                          help="带通滤波器的低频截止频率，低于此频率的信号将被滤除")
+                            with filter_col2:
+                                high_cut = st.number_input("高截止频率 (Hz)", min_value=0.0, value=5.0, step=0.5,
+                                                          help="带通滤波器的高频截止频率，高于此频率的信号将被滤除")
+                            
+                            # 第三行：主频搜索范围
+                            st.markdown("**🔍 主频搜索范围**")
+                            search_col1, search_col2 = st.columns(2)
+                            with search_col1:
+                                f_search_min = st.number_input("搜索下限 (Hz)", min_value=0.0, value=0.3, step=0.1,
+                                                              help="主频搜索的最低频率，建议略高于低截止频率")
+                            with search_col2:
+                                f_search_max = st.number_input("搜索上限 (Hz)", min_value=0.0, value=4.5, step=0.5,
+                                                              help="主频搜索的最高频率，建议略低于高截止频率")
+                            
+                            st.markdown("---")
+                            
+                            # 开始分析按钮 - 更醒目的样式
+                            analysis_button_col1, analysis_button_col2, analysis_button_col3 = st.columns([1, 2, 1])
+                            with analysis_button_col2:
+                                if st.button("🚀 开始Backend分析", type="primary", use_container_width=True, 
+                                           help="点击开始执行完整的振动分析流程"):
+                                    with st.spinner("正在进行Backend分析，请稍候..."):
+                                        try:
+                                            # 步骤1: 图像分析 - 使用进度指示器
+                                            step1_container = st.container()
+                                            with step1_container:
+                                                st.markdown('<div class="step-indicator">', unsafe_allow_html=True)
+                                                st.info("📸 **步骤 1/2**: 图像分析 - 正在提取位移序列...")
+                                                st.markdown('</div>', unsafe_allow_html=True)
+                                            
+                                            image_result = run_image_analysis(stabilized_frames, fps)
+                                            
+                                            # 选择振动方向
+                                            if vibration_direction == "切向 (Flapwise)":
+                                                d_t_mm = image_result.d_flapwise_mm
+                                                direction_name = "切向"
+                                            else:
+                                                d_t_mm = image_result.d_edgewise_mm
+                                                direction_name = "轴向"
+                                            
+                                            # 步骤2: 信号分析
+                                            step2_container = st.container()
+                                            with step2_container:
+                                                st.markdown('<div class="step-indicator">', unsafe_allow_html=True)
+                                                st.info("📊 **步骤 2/2**: 信号分析 - 正在进行频谱分析和特征提取...")
+                                                st.markdown('</div>', unsafe_allow_html=True)
+                                        
+                                        # 转换为信号分析模块需要的格式
+                                        signal_disp = SignalDisplacementSeries(
+                                            time_stamps=image_result.time_stamps,
+                                            d_t_mm=d_t_mm,
+                                            fs=int(fps),
+                                            fan_id=uploaded_file.name
+                                        )
+                                        
+                                        # 执行信号分析
+                                        analysis_result = analyze_displacement_series(
+                                            disp_series=signal_disp,
+                                            low_cut=low_cut,
+                                            high_cut=high_cut,
+                                            A_pp_limit=A_pp_limit,
+                                            f_search_min=f_search_min,
+                                            f_search_max=f_search_max,
+                                            window="hann",
+                                            zero_pad_to=4096
+                                        )
+                                        
+                                            # 存储结果到session_state
+                                            st.session_state.image_analysis_result = image_result
+                                            st.session_state.signal_analysis_result = analysis_result
+                                            st.session_state.vibration_direction = vibration_direction
+                                            
+                                            st.success("✅ Backend分析完成！")
+                                            st.balloons()
+                                            
+                                            st.markdown('</div>', unsafe_allow_html=True)  # 关闭result-card
+                                            
+                                            # 显示分析结果 - 使用更美观的布局
+                                            st.markdown("---")
+                                            st.markdown("## 📈 分析结果")
+                                            
+                                            # 结果指标 - 使用更大的卡片
+                                            st.markdown("### 📊 关键指标")
+                                            result_col1, result_col2, result_col3, result_col4 = st.columns(4)
+                                            
+                                            with result_col1:
+                                                st.markdown('<div style="background: rgba(33, 150, 243, 0.1); padding: 1rem; border-radius: 10px; text-align: center;">', unsafe_allow_html=True)
+                                                st.metric("峰峰值", f"{analysis_result.A_pp_mm:.3f}", "mm")
+                                                st.markdown('</div>', unsafe_allow_html=True)
+                                            
+                                            with result_col2:
+                                                st.markdown('<div style="background: rgba(76, 175, 80, 0.1); padding: 1rem; border-radius: 10px; text-align: center;">', unsafe_allow_html=True)
+                                                st.metric("RMS值", f"{analysis_result.A_rms_mm:.3f}", "mm")
+                                                st.markdown('</div>', unsafe_allow_html=True)
+                                            
+                                            with result_col3:
+                                                st.markdown('<div style="background: rgba(255, 152, 0, 0.1); padding: 1rem; border-radius: 10px; text-align: center;">', unsafe_allow_html=True)
+                                                st.metric("主频", f"{analysis_result.f_dominant_hz:.3f}", "Hz")
+                                                st.markdown('</div>', unsafe_allow_html=True)
+                                            
+                                            with result_col4:
+                                                status_color = "rgba(244, 67, 54, 0.1)" if analysis_result.is_abnormal else "rgba(76, 175, 80, 0.1)"
+                                                status_icon = "⚠️" if analysis_result.is_abnormal else "✅"
+                                                st.markdown(f'<div style="background: {status_color}; padding: 1rem; border-radius: 10px; text-align: center;">', unsafe_allow_html=True)
+                                                status_text = "异常" if analysis_result.is_abnormal else "正常"
+                                                st.metric("状态", f"{status_icon} {status_text}")
+                                                st.markdown('</div>', unsafe_allow_html=True)
+                                        
+                                            # 详细结果 - 使用更清晰的布局
+                                            st.markdown("---")
+                                            detail_col1, detail_col2 = st.columns(2)
+                                            
+                                            with detail_col1:
+                                                st.markdown("### 📋 分析信息")
+                                                st.markdown(f"""
+                                                - **振动方向**: {direction_name} ({vibration_direction.split('(')[1].replace(')', '')})
+                                                - **采样率**: {fps} Hz
+                                                - **数据点数**: {len(d_t_mm):,}
+                                                - **时间范围**: {image_result.time_stamps[0]:.2f} - {image_result.time_stamps[-1]:.2f} 秒
+                                                - **持续时间**: {image_result.time_stamps[-1] - image_result.time_stamps[0]:.2f} 秒
+                                                """)
+                                            
+                                            with detail_col2:
+                                                st.markdown("### 📊 质量指标")
+                                                quality = analysis_result.quality
+                                                if quality:
+                                                    for key, value in quality.items():
+                                                        if isinstance(value, (int, float)):
+                                                            st.write(f"- **{key}**: {value:.4f}")
+                                                        else:
+                                                            st.write(f"- **{key}**: {value}")
+                                            
+                                            # 可视化图表 - 使用更好的样式
+                                            st.markdown("---")
+                                            st.markdown("## 📊 可视化图表")
+                                            
+                                            # 时域图 - 改进样式
+                                            st.markdown("### 📈 时域分析")
+                                            fig1, ax1 = plt.subplots(figsize=(14, 5))
+                                            ax1.plot(image_result.time_stamps, d_t_mm, 'b-', linewidth=1.2, alpha=0.8, label='位移')
+                                            ax1.axhline(y=0, color='gray', linestyle='--', linewidth=0.8, alpha=0.5)
+                                            ax1.fill_between(image_result.time_stamps, d_t_mm, 0, alpha=0.3, color='blue')
+                                            ax1.set_xlabel('时间 (秒)', fontsize=13, fontweight='bold')
+                                            ax1.set_ylabel(f'{direction_name}位移 (mm)', fontsize=13, fontweight='bold')
+                                            ax1.set_title(f'{direction_name}振动位移时间序列', fontsize=15, fontweight='bold', pad=15)
+                                            ax1.grid(True, alpha=0.3, linestyle='--')
+                                            ax1.legend(loc='upper right', fontsize=11)
+                                            plt.tight_layout()
+                                            st.pyplot(fig1)
+                                            plt.close(fig1)
+                                            
+                                            # 频谱图 - 改进样式
+                                            st.markdown("### 📉 频域分析")
+                                            fig2, ax2 = plt.subplots(figsize=(14, 5))
+                                            ax2.plot(analysis_result.f_spectrum, analysis_result.X_spectrum, 
+                                                    'r-', linewidth=1.5, alpha=0.8, label='频谱')
+                                            ax2.axvline(analysis_result.f_dominant_hz, color='green', linestyle='--', 
+                                                      linewidth=2.5, alpha=0.8, label=f'主频: {analysis_result.f_dominant_hz:.3f} Hz')
+                                            ax2.fill_between(analysis_result.f_spectrum, analysis_result.X_spectrum, 0, 
+                                                           alpha=0.3, color='red')
+                                            ax2.set_xlabel('频率 (Hz)', fontsize=13, fontweight='bold')
+                                            ax2.set_ylabel('幅值 (mm)', fontsize=13, fontweight='bold')
+                                            ax2.set_title(f'{direction_name}振动频谱', fontsize=15, fontweight='bold', pad=15)
+                                            ax2.set_xlim([0, min(high_cut * 1.2, analysis_result.f_spectrum[-1])])
+                                            ax2.grid(True, alpha=0.3, linestyle='--')
+                                            ax2.legend(loc='upper right', fontsize=11)
+                                            plt.tight_layout()
+                                            st.pyplot(fig2)
+                                            plt.close(fig2)
+                                        
+                                        except Exception as e:
+                                            st.markdown('</div>', unsafe_allow_html=True)  # 关闭result-card
+                                            st.error(f"❌ Backend分析失败: {str(e)}")
+                                            with st.expander("🔍 查看详细错误信息"):
+                                                st.exception(e)
+                        else:
+                            if not BACKEND_AVAILABLE:
+                                st.warning("⚠️ Backend图像分析模块不可用，无法进行振动分析。请检查Backend模块是否正确安装。")
+                            elif not SIGNAL_ANALYSIS_AVAILABLE:
+                                st.warning("⚠️ Backend信号分析模块不可用，无法进行振动分析。请检查Backend/signal.py文件是否存在。")
+                        
+                        # 显示已保存的分析结果（如果存在）
+                        if 'signal_analysis_result' in st.session_state and 'image_analysis_result' in st.session_state:
+                            st.markdown("---")
+                            st.markdown("## 📊 已保存的分析结果")
+                            
+                            result = st.session_state.signal_analysis_result
+                            image_result = st.session_state.image_analysis_result
+                            direction = st.session_state.get('vibration_direction', '未知')
+                            
+                            # 获取方向数据
+                            if direction == "切向 (Flapwise)":
+                                d_t_mm = image_result.d_flapwise_mm
+                                direction_name = "切向"
+                            else:
+                                d_t_mm = image_result.d_edgewise_mm
+                                direction_name = "轴向"
+                            
+                            # 显示关键指标
+                            st.markdown("### 📈 关键指标")
+                            result_col1, result_col2, result_col3, result_col4 = st.columns(4)
+                            
+                            with result_col1:
+                                st.markdown('<div style="background: rgba(33, 150, 243, 0.1); padding: 1rem; border-radius: 10px; text-align: center;">', unsafe_allow_html=True)
+                                st.metric("峰峰值", f"{result.A_pp_mm:.3f}", "mm")
+                                st.markdown('</div>', unsafe_allow_html=True)
+                            
+                            with result_col2:
+                                st.markdown('<div style="background: rgba(76, 175, 80, 0.1); padding: 1rem; border-radius: 10px; text-align: center;">', unsafe_allow_html=True)
+                                st.metric("RMS值", f"{result.A_rms_mm:.3f}", "mm")
+                                st.markdown('</div>', unsafe_allow_html=True)
+                            
+                            with result_col3:
+                                st.markdown('<div style="background: rgba(255, 152, 0, 0.1); padding: 1rem; border-radius: 10px; text-align: center;">', unsafe_allow_html=True)
+                                st.metric("主频", f"{result.f_dominant_hz:.3f}", "Hz")
+                                st.markdown('</div>', unsafe_allow_html=True)
+                            
+                            with result_col4:
+                                status_color = "rgba(244, 67, 54, 0.1)" if result.is_abnormal else "rgba(76, 175, 80, 0.1)"
+                                status_icon = "⚠️" if result.is_abnormal else "✅"
+                                st.markdown(f'<div style="background: {status_color}; padding: 1rem; border-radius: 10px; text-align: center;">', unsafe_allow_html=True)
+                                status_text = "异常" if result.is_abnormal else "正常"
+                                st.metric("状态", f"{status_icon} {status_text}")
+                                st.markdown('</div>', unsafe_allow_html=True)
+                            
+                            # 显示图表
+                            st.markdown("---")
+                            st.markdown("### 📊 可视化图表")
+                            
+                            chart_col1, chart_col2 = st.columns(2)
+                            
+                            with chart_col1:
+                                st.markdown("**时域图**")
+                                fig1, ax1 = plt.subplots(figsize=(10, 4))
+                                ax1.plot(image_result.time_stamps, d_t_mm, 'b-', linewidth=1.2, alpha=0.8)
+                                ax1.set_xlabel('时间 (秒)', fontsize=11)
+                                ax1.set_ylabel(f'{direction_name}位移 (mm)', fontsize=11)
+                                ax1.set_title(f'{direction_name}振动位移', fontsize=12, fontweight='bold')
+                                ax1.grid(True, alpha=0.3)
+                                plt.tight_layout()
+                                st.pyplot(fig1)
+                                plt.close(fig1)
+                            
+                            with chart_col2:
+                                st.markdown("**频谱图**")
+                                fig2, ax2 = plt.subplots(figsize=(10, 4))
+                                ax2.plot(result.f_spectrum, result.X_spectrum, 'r-', linewidth=1.5, alpha=0.8)
+                                ax2.axvline(result.f_dominant_hz, color='green', linestyle='--', linewidth=2, 
+                                          label=f'主频: {result.f_dominant_hz:.3f} Hz')
+                                ax2.set_xlabel('频率 (Hz)', fontsize=11)
+                                ax2.set_ylabel('幅值 (mm)', fontsize=11)
+                                ax2.set_title(f'{direction_name}振动频谱', fontsize=12, fontweight='bold')
+                                ax2.grid(True, alpha=0.3)
+                                ax2.legend(fontsize=9)
+                                plt.tight_layout()
+                                st.pyplot(fig2)
+                                plt.close(fig2)
+                            
+                            # 重新分析按钮
+                            st.markdown("---")
+                            refresh_col1, refresh_col2, refresh_col3 = st.columns([1, 2, 1])
+                            with refresh_col2:
+                                if st.button("🔄 使用新参数重新分析", type="secondary", use_container_width=True,
+                                           help="清除当前结果，使用上方设置的参数重新进行分析"):
+                                    # 清除之前的结果
+                                    if 'signal_analysis_result' in st.session_state:
+                                        del st.session_state.signal_analysis_result
+                                    if 'image_analysis_result' in st.session_state:
+                                        del st.session_state.image_analysis_result
+                                    st.rerun()
                     else:
                         # 图像文件模式
                         result_col1, result_col2 = st.columns(2)
