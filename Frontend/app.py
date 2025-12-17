@@ -764,27 +764,27 @@ if uploaded_file is not None:
                                                 st.markdown('<div class="step-indicator">', unsafe_allow_html=True)
                                                 st.info("📊 **步骤 2/2**: 信号分析 - 正在进行频谱分析和特征提取...")
                                                 st.markdown('</div>', unsafe_allow_html=True)
-                                        
-                                        # 转换为信号分析模块需要的格式
-                                        signal_disp = SignalDisplacementSeries(
-                                            time_stamps=image_result.time_stamps,
-                                            d_t_mm=d_t_mm,
-                                            fs=int(fps),
-                                            fan_id=uploaded_file.name
-                                        )
-                                        
-                                        # 执行信号分析
-                                        analysis_result = analyze_displacement_series(
-                                            disp_series=signal_disp,
-                                            low_cut=low_cut,
-                                            high_cut=high_cut,
-                                            A_pp_limit=A_pp_limit,
-                                            f_search_min=f_search_min,
-                                            f_search_max=f_search_max,
-                                            window="hann",
-                                            zero_pad_to=4096
-                                        )
-                                        
+                                            
+                                            # 转换为信号分析模块需要的格式
+                                            signal_disp = SignalDisplacementSeries(
+                                                time_stamps=image_result.time_stamps,
+                                                d_t_mm=d_t_mm,
+                                                fs=int(fps),
+                                                fan_id=uploaded_file.name
+                                            )
+                                            
+                                            # 执行信号分析
+                                            analysis_result = analyze_displacement_series(
+                                                disp_series=signal_disp,
+                                                low_cut=low_cut,
+                                                high_cut=high_cut,
+                                                A_pp_limit=A_pp_limit,
+                                                f_search_min=f_search_min,
+                                                f_search_max=f_search_max,
+                                                window="hann",
+                                                zero_pad_to=4096
+                                            )
+                                            
                                             # 存储结果到session_state
                                             st.session_state.image_analysis_result = image_result
                                             st.session_state.signal_analysis_result = analysis_result
@@ -825,7 +825,7 @@ if uploaded_file is not None:
                                                 status_text = "异常" if analysis_result.is_abnormal else "正常"
                                                 st.metric("状态", f"{status_icon} {status_text}")
                                                 st.markdown('</div>', unsafe_allow_html=True)
-                                        
+                                            
                                             # 详细结果 - 使用更清晰的布局
                                             st.markdown("---")
                                             detail_col1, detail_col2 = st.columns(2)
@@ -887,7 +887,7 @@ if uploaded_file is not None:
                                             plt.tight_layout()
                                             st.pyplot(fig2)
                                             plt.close(fig2)
-                                        
+                                            
                                         except Exception as e:
                                             st.markdown('</div>', unsafe_allow_html=True)  # 关闭result-card
                                             st.error(f"❌ Backend分析失败: {str(e)}")
