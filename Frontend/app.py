@@ -425,8 +425,35 @@ if uploaded_file is not None:
 
                 except Exception as e:
                     elapsed_time = time.time() - start_time
-                    add_log(f"❌ 处理失败: {str(e)}")
-                    st.error(f"❌ 处理过程中发生错误: {str(e)}")
+                    error_msg = str(e)
+                    add_log(f"❌ 处理失败: {error_msg}")
+                    
+                    # 根据错误类型提供不同的建议
+                    error_suggestions = []
+                    
+                    if "无法打开视频文件" in error_msg:
+                        error_suggestions.append("• 检查视频文件是否损坏")
+                        error_suggestions.append("• 尝试使用其他视频文件")
+                        error_suggestions.append("• 确认视频格式是否支持（.mp4, .m4v, .mov）")
+                    elif "无法获取" in error_msg or "损坏" in error_msg:
+                        error_suggestions.append("• 视频文件可能已损坏")
+                        error_suggestions.append("• 尝试使用视频修复工具修复文件")
+                        error_suggestions.append("• 或使用其他视频文件")
+                    elif "read" in error_msg.lower() or "exception" in error_msg.lower():
+                        error_suggestions.append("• 视频文件可能在处理过程中损坏")
+                        error_suggestions.append("• 尝试重新上传视频文件")
+                        error_suggestions.append("• 如果视频很大，可能是内存不足，尝试处理较短的视频")
+                        error_suggestions.append("• 检查视频编码格式，某些编码可能不兼容")
+                    else:
+                        error_suggestions.append("• 检查视频文件是否完整")
+                        error_suggestions.append("• 尝试使用其他视频文件")
+                        error_suggestions.append("• 检查系统内存是否充足")
+                    
+                    st.error(f"❌ 处理过程中发生错误: {error_msg}")
+                    
+                    if error_suggestions:
+                        st.warning("**💡 建议解决方案：**\n" + "\n".join(error_suggestions))
+                    
                     with st.expander("🔍 查看详细错误信息"):
                         st.exception(e)
                     
