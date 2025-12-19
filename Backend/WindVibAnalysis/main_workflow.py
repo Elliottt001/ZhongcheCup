@@ -42,14 +42,34 @@ def load_frames_from_npz(npz_path: str) -> Tuple[List[np.ndarray], int]:
         
         # 将frames数组转换为列表
         if isinstance(frames_array, np.ndarray):
-            # 如果是对象数组，需要逐个提取
+            # 如果是对象数组，需要逐个提取并确保是numpy数组
             if frames_array.dtype == object:
-                frames = [frame for frame in frames_array]
+                frames = []
+                for i, frame in enumerate(frames_array):
+                    # 确保每个frame是numpy数组
+                    if isinstance(frame, np.ndarray):
+                        # 确保数据类型正确（uint8）和形状正确（3维）
+                        if frame.dtype != np.uint8:
+                            frame = frame.astype(np.uint8)
+                        frames.append(frame.copy())
+                    else:
+                        # 如果不是numpy数组，尝试转换
+                        frame_arr = np.asarray(frame, dtype=np.uint8)
+                        frames.append(frame_arr)
             else:
                 # 如果是普通数组，直接转换
-                frames = [frames_array[i] for i in range(len(frames_array))]
+                frames = [frames_array[i].copy() if isinstance(frames_array[i], np.ndarray) else np.asarray(frames_array[i], dtype=np.uint8) for i in range(len(frames_array))]
         else:
-            frames = list(frames_array)
+            # 如果是列表或其他类型
+            frames = []
+            for frame in frames_array:
+                if isinstance(frame, np.ndarray):
+                    if frame.dtype != np.uint8:
+                        frame = frame.astype(np.uint8)
+                    frames.append(frame.copy())
+                else:
+                    frame_arr = np.asarray(frame, dtype=np.uint8)
+                    frames.append(frame_arr)
         
         # 提取fps值
         if isinstance(fps_value, np.ndarray):
