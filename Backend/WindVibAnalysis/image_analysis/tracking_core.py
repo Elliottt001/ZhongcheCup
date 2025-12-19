@@ -12,10 +12,28 @@ from data_structs.analysis_data import TrackingConfig
 class MarkerTracker:
     def __init__(self, config: TrackingConfig):
         self.config = config
-        # Initialize AruCo dictionary and parameters
-        # Using DICT_4X4_50 as default or based on config if mapped
-        self.aruco_dict = cv2.aruco.getPredefinedDictionary(cv2.aruco.DICT_4X4_50)
-        self.aruco_params = cv2.aruco.DetectorParameters()
+        
+        # 检测OpenCV版本并选择合适的AruCo API
+        self.opencv_version = cv2.__version__
+        self.use_new_api = False
+        
+        try:
+            # 尝试使用新API (OpenCV 4.7+)
+            if hasattr(cv2.aruco, 'ArucoDetector'):
+                self.aruco_dict = cv2.aruco.getPredefinedDictionary(cv2.aruco.DICT_4X4_50)
+                self.aruco_params = cv2.aruco.DetectorParameters()
+                self.aruco_detector = cv2.aruco.ArucoDetector(self.aruco_dict, self.aruco_params)
+                self.use_new_api = True
+            else:
+                # 使用旧API (OpenCV 4.6及以下)
+                self.aruco_dict = cv2.aruco.getPredefinedDictionary(cv2.aruco.DICT_4X4_50)
+                self.aruco_params = cv2.aruco.DetectorParameters()
+                self.use_new_api = False
+        except Exception:
+            # 如果都失败，尝试直接使用旧API
+            self.aruco_dict = cv2.aruco.getPredefinedDictionary(cv2.aruco.DICT_4X4_50)
+            self.aruco_params = cv2.aruco.DetectorParameters()
+            self.use_new_api = False
         
         # Subpixel criteria
         self.criteria = (cv2.TERM_CRITERIA_EPS + cv2.TERM_CRITERIA_MAX_ITER, 
@@ -34,10 +52,25 @@ class MarkerTracker:
         if len(frame.shape) == 3:
             gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
 
-        # 1. AruCo 粗略检测
-        corners, ids, rejected = cv2.aruco.detectMarkers(
-            gray, self.aruco_dict, parameters=self.aruco_params
-        )
+        # 1. AruCo 粗略检测 - 兼容新旧API
+        try:
+            if self.use_new_api:
+                # 新API (OpenCV 4.7+)
+                corners, ids, rejected = self.aruco_detector.detectMarkers(gray)
+            else:
+                # 旧API (OpenCV 4.6及以下)
+                corners, ids, rejected = cv2.aruco.detectMarkers(
+                    gray, self.aruco_dict, parameters=self.aruco_params
+                )
+        except AttributeError:
+            # 如果新API不可用，回退到旧API
+            try:
+                corners, ids, rejected = cv2.aruco.detectMarkers(
+                    gray, self.aruco_dict, parameters=self.aruco_params
+                )
+            except Exception as e:
+                # 如果都失败，返回NaN
+                return np.nan, np.nan
 
         if ids is None or len(ids) == 0:
             return np.nan, np.nan
