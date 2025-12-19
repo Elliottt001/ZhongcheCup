@@ -20,6 +20,22 @@
 
 ### 核心接口
 
+#### 方法1: 从npz文件加载（推荐，用于处理Frontend生成的npz文件）
+
+```python
+from WindVibAnalysis.main_workflow import run_image_analysis_from_npz
+
+def run_image_analysis_from_npz(npz_path: str) -> DisplacementSeries:
+    ...
+```
+
+*   **输入**:
+    *   `npz_path`: Frontend生成的npz文件路径
+*   **输出**:
+    *   返回一个 `DisplacementSeries` 对象，包含切向和轴向的物理位移序列。
+
+#### 方法2: 直接传入帧序列
+
 ```python
 from WindVibAnalysis.main_workflow import run_image_analysis
 
@@ -35,23 +51,79 @@ def run_image_analysis(stabilized_frames: list[np.ndarray], fs: int) -> Displace
 
 ### 调用示例
 
+#### 示例1: 从Frontend生成的npz文件加载（推荐）
+
+```python
+from WindVibAnalysis.main_workflow import run_image_analysis_from_npz
+
+# 直接使用Frontend生成的npz文件
+npz_file = "video_frames_20240101_120000.npz"
+
+try:
+    result = run_image_analysis_from_npz(npz_file)
+
+    # 获取结果
+    print(f"采样率: {result.fs} Hz")
+    print(f"数据长度: {len(result.time_stamps)}")
+    
+    # 获取物理位移 (单位: mm)
+    flapwise = result.d_flapwise_mm  # 切向位移
+    edgewise = result.d_edgewise_mm  # 轴向位移
+    
+    print(f"前5帧切向位移: {flapwise[:5]}")
+
+except Exception as e:
+    print(f"分析失败: {e}")
+```
+
+#### 示例2: 手动加载npz文件
+
+```python
+import numpy as np
+from WindVibAnalysis.main_workflow import run_image_analysis, load_frames_from_npz
+
+# 从npz文件加载数据
+npz_file = "video_frames_20240101_120000.npz"
+frames, fps = load_frames_from_npz(npz_file)
+
+# 调用分析模块
+try:
+    result = run_image_analysis(frames, fps)
+
+    # 获取结果
+    print(f"采样率: {result.fs} Hz")
+    print(f"数据长度: {len(result.time_stamps)}")
+    
+    # 获取物理位移 (单位: mm)
+    flapwise = result.d_flapwise_mm  # 切向位移
+    edgewise = result.d_edgewise_mm  # 轴向位移
+    
+    print(f"前5帧切向位移: {flapwise[:5]}")
+
+except Exception as e:
+    print(f"分析失败: {e}")
+```
+
+#### 示例3: 从视频文件读取（传统方式）
+
 ```python
 import cv2
 import numpy as np
 from WindVibAnalysis.main_workflow import run_image_analysis
 
-# 1. 准备数据 (模拟读取视频帧)
+# 1. 准备数据 (读取视频帧)
 frames = []
-# cap = cv2.VideoCapture('video.mp4')
-# while True:
-#     ret, frame = cap.read()
-#     if not ret: break
-#     frames.append(frame)
-# fs = 30
+cap = cv2.VideoCapture('video.mp4')
+while True:
+    ret, frame = cap.read()
+    if not ret: break
+    frames.append(frame)
+fs = int(cap.get(cv2.CAP_PROP_FPS))
+cap.release()
 
 # 2. 调用分析模块
 try:
-    result = run_image_analysis(frames, fs=30)
+    result = run_image_analysis(frames, fs=fs)
 
     # 3. 获取结果
     print(f"采样率: {result.fs} Hz")
@@ -65,6 +137,46 @@ try:
 
 except Exception as e:
     print(f"分析失败: {e}")
+```
+
+---
+
+## 📦 处理Frontend生成的npz文件
+
+### 从npz文件直接分析（推荐）
+
+Frontend会生成包含视频帧序列的npz文件，Backend可以直接处理：
+
+```python
+from WindVibAnalysis.main_workflow import run_image_analysis_from_npz
+
+# 一步完成：加载和分析
+result = run_image_analysis_from_npz("video_frames_20240101_120000.npz")
+
+# 获取结果
+print(f"采样率: {result.fs} Hz")
+print(f"切向位移: {result.d_flapwise_mm}")
+print(f"轴向位移: {result.d_edgewise_mm}")
+```
+
+### npz文件格式
+
+Frontend生成的npz文件包含：
+- **`frames`**: `numpy.ndarray` (object类型) - 视频帧序列
+- **`fps`**: `numpy.ndarray` (int32类型) - 视频帧率
+
+### 手动加载npz文件
+
+如果需要先检查数据再分析：
+
+```python
+from WindVibAnalysis.main_workflow import load_frames_from_npz, run_image_analysis
+
+# 加载npz文件
+frames, fps = load_frames_from_npz("video_frames_20240101_120000.npz")
+
+# 执行分析
+result = run_image_analysis(frames, fps)
 ```
 
 ---

@@ -1,139 +1,125 @@
 # 风机叶片视频预处理系统
 
-这是一个基于Streamlit的风机叶片视频预处理系统，用于处理无人机采集的M4V/MP4视频，执行畸变校正、背景冻结稳像以及等时图像提取或帧序列输出。
+这是一个基于Streamlit的风机叶片视频预处理系统，用于处理无人机采集的M4V/MP4视频，提取视频帧序列并保存为Backend所需的npz格式文件。
 
 ## 功能特性
 
-- 🎥 视频畸变校正
-- 🎬 视频稳像处理（可选）
-- ✂️ 等时图像切割或连续帧序列输出
+- 🎥 视频帧提取（直接读取，无额外处理）
+- 💾 输出Backend格式（.npz文件，包含frames和fps）
+- ⬇️ 一键下载处理结果
 - 🌐 现代化的Web界面
 - 📁 支持大文件上传（最大2GB）
-- 🔄 双输出模式：图像文件或内存帧序列
 
-## 本地部署步骤
+## 快速开始
 
 ### 1. 环境要求
 
 - Python 3.7+
 - pip
-- 推荐使用虚拟环境
 
-### 2. 克隆或下载项目
-
-将Frontend文件夹的内容下载到本地。
-
-### 3. 安装依赖
-
-打开命令提示符或终端，导航到Frontend文件夹，然后运行：
+### 2. 安装依赖
 
 ```bash
-# 如果使用虚拟环境，先激活
-# Windows:
-.venv\Scripts\activate
-
-# 然后安装依赖
+cd Frontend
 pip install -r requirements.txt
 ```
 
-### 4. 运行应用
-
-在Frontend文件夹中运行以下命令：
+### 3. 启动应用
 
 ```bash
 # Windows PowerShell
 streamlit run app.py --server.maxUploadSize=2048
 
-# 或使用完整路径
-& .venv\Scripts\streamlit.exe run app.py --server.maxUploadSize=2048
+# 或使用Python模块方式
+python -m streamlit run app.py --server.maxUploadSize=2048
 ```
 
-**参数说明：**
-- `--server.maxUploadSize=2048`: 设置最大上传文件大小为2048MB（约2GB）
-- 可根据需要调整数值，例如 `--server.maxUploadSize=1024` 为1GB
+### 4. 访问应用
 
-### 5. 访问应用
-
-应用启动后，在浏览器中访问显示的本地URL，通常是：
+应用启动后，在浏览器中访问：
 - **本地URL**: http://localhost:8501
-- **网络URL**: http://10.196.233.100:8501 (可在局域网访问)
+- 如果端口被占用，会自动使用其他端口
 
 ## 使用说明
 
-### 基本操作步骤：
+### 基本操作流程
 
-1. **配置参数**：
-   - 在侧边栏设置相机内参矩阵 (fx, fy, cx, cy)
-   - 设置畸变系数 (k1, k2, p1, p2, k3)
-   - 选择处理模式和参数
-
-2. **选择输出模式**：
-   - **保存图像文件**: 生成JPG图像序列和ZIP压缩包
-   - **返回帧序列**: 输出内存中的帧列表，用于后续分析
-
-3. **设置输出路径**：
-   - 指定本地文件夹路径用于保存结果
-
-4. **上传视频**：
-   - 支持 .m4v, .mp4, .mov 格式
+1. **上传视频文件**
+   - 支持格式：.m4v, .mp4, .mov
    - 最大支持2GB文件
 
-5. **开始处理**：
+2. **开始处理**
    - 点击"🚀 开始处理"按钮
-   - 实时查看处理进度和日志
+   - 系统会自动提取所有视频帧
+   - 实时查看处理进度
 
-6. **获取结果**：
-   - 图像模式：下载ZIP压缩包或查看输出文件夹
-   - 帧序列模式：数据存储在内存中，可用于振动分析
+3. **下载结果**
+   - 处理完成后自动生成.npz文件
+   - 点击"⬇️ 下载Backend格式文件"按钮
+   - 保存到本地
 
-## 输出格式说明
+### 输出格式
 
-### 图像文件模式
-- **文件格式**: JPG (95%质量)
-- **命名规则**: `frame_{帧号:06d}_t{时间戳:.2f}s.jpg`
-- **存储位置**: `输出文件夹/视频名_时间戳/`
-- **压缩包**: 可选生成ZIP文件
+生成的.npz文件包含：
+- **`frames`**: `list[np.ndarray]` - 所有视频帧序列
+- **`fps`**: `int` - 视频帧率
 
-### 帧序列模式
-- **数据类型**: `list[np.ndarray]` (OpenCV BGR格式)
-- **帧率信息**: `float` (FPS)
-- **用途**: 直接输入到Backend振动分析模块
+**完全兼容Backend接口**：
+```python
+from Backend.WindVibAnalysis.main_workflow import run_image_analysis_from_npz
+result = run_image_analysis_from_npz("your_file.npz")
+```
 
-## 注意事项
+## 在Backend中使用
 
-- 处理大视频文件时需要足够的内存和存储空间
-- 如果处理速度慢，可以取消勾选"启用视频稳像"选项
-- 确保输出文件夹路径存在且有写入权限
-- 帧序列模式会占用较多内存，不适合超长视频
+下载npz文件后，可以在Backend中直接使用：
+
+```python
+from WindVibAnalysis.main_workflow import run_image_analysis_from_npz
+
+# 直接分析npz文件
+result = run_image_analysis_from_npz("video_frames_20240101_120000.npz")
+
+# 获取结果
+print(f"采样率: {result.fs} Hz")
+print(f"切向位移: {result.d_flapwise_mm}")
+print(f"轴向位移: {result.d_edgewise_mm}")
+```
 
 ## 技术栈
 
 - **Streamlit**: Web界面框架
-- **OpenCV**: 视频处理和计算机视觉
-- **NumPy**: 数值计算
-- **tempfile**: 临时文件管理
+- **OpenCV**: 视频处理
+- **NumPy**: 数值计算和文件保存
 
 ## 故障排除
 
-### 常见问题：
+### 常见问题
 
-1. **无法启动应用**：
+1. **无法启动应用**
    - 检查Python版本 (需要3.7+)
-   - 确认依赖已正确安装
-   - 尝试重新创建虚拟环境
+   - 确认依赖已正确安装：`pip install -r requirements.txt`
 
-2. **上传文件失败**：
-   - 检查文件大小是否超过限制
+2. **上传文件失败**
+   - 检查文件大小是否超过2GB限制
    - 确认文件格式支持 (.m4v, .mp4, .mov)
 
-3. **处理速度慢**：
-   - 启用"快速模式"
-   - 关闭视频稳像
-   - 增加时间间隔
+3. **处理过程中出错**
+   - 视频文件可能损坏，尝试使用其他视频文件
+   - 检查系统内存是否充足
+   - 查看错误信息中的具体提示
 
-4. **内存不足**：
-   - 使用图像文件模式而不是帧序列
-   - 处理较短的视频片段
+4. **端口被占用**
+   ```bash
+   # 使用其他端口
+   streamlit run app.py --server.port 8502 --server.maxUploadSize=2048
+   ```
+
+## 注意事项
+
+- 处理大视频文件时需要足够的内存
+- 提取的帧会全部保存在内存中，超长视频可能占用大量内存
+- 如果视频中有损坏的帧，系统会自动跳过并继续处理
 
 ## 许可证
 
