@@ -120,7 +120,7 @@ result = run_image_analysis_from_npz("your_file.npz")
 4. 点击"开始分析"
 5. 查看可视化结果
 
-详细说明请参考：[分析界面使用说明.md](分析界面使用说明.md)
+详细说明请参考下方"振动分析可视化界面"部分。
 
 ### 在Backend中使用（编程方式）
 
