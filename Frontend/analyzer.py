@@ -31,10 +31,20 @@ try:
 except ImportError as e:
     st.warning(f"⚠️ Backend图像分析模块导入失败: {e}")
 
+# 使用importlib避免与Python内置signal模块冲突
 try:
-    from signal import DisplacementSeries as SignalDisplacementSeries, analyze_displacement_series
-    SIGNAL_AVAILABLE = True
-except ImportError as e:
+    import importlib.util
+    signal_module_path = os.path.join(backend_path, 'signal.py')
+    if os.path.exists(signal_module_path):
+        spec = importlib.util.spec_from_file_location("backend_signal", signal_module_path)
+        backend_signal = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(backend_signal)
+        SignalDisplacementSeries = backend_signal.DisplacementSeries
+        analyze_displacement_series = backend_signal.analyze_displacement_series
+        SIGNAL_AVAILABLE = True
+    else:
+        st.warning(f"⚠️ Backend信号分析模块文件不存在: {signal_module_path}")
+except Exception as e:
     st.warning(f"⚠️ Backend信号分析模块导入失败: {e}")
 
 # --- 页面配置 ---
