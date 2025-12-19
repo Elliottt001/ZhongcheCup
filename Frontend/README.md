@@ -24,13 +24,15 @@ cd Frontend
 pip install -r requirements.txt
 ```
 
+**注意**：直接使用系统Python安装即可，**不需要虚拟环境**。
+
 ### 3. 启动应用
 
 ```bash
 # Windows PowerShell
 streamlit run app.py --server.maxUploadSize=2048
 
-# 或使用Python模块方式
+# 或使用Python模块方式（如果上面命令不工作）
 python -m streamlit run app.py --server.maxUploadSize=2048
 ```
 
@@ -39,6 +41,13 @@ python -m streamlit run app.py --server.maxUploadSize=2048
 应用启动后，在浏览器中访问：
 - **本地URL**: http://localhost:8501
 - 如果端口被占用，会自动使用其他端口
+
+### ⚠️ 关于项目中的 PythonProject 文件夹
+
+如果项目根目录下有 `PythonProject/` 文件夹：
+- **这是什么**：这是之前创建的Python虚拟环境目录（包含python.exe和pip.exe）
+- **是否需要**：**不需要**，可以直接使用系统Python运行程序
+- **可以删除**：如果不需要虚拟环境，可以删除此文件夹，不影响项目运行
 
 ## 使用说明
 

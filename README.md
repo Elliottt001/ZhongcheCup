@@ -20,8 +20,26 @@ PythonProject/
 │   ├── signal.py         # 信号分析模块
 │   └── 使用npz文件示例.py # 使用示例
 │
+├── PythonProject/        # ⚠️ 虚拟环境文件夹（可选，可删除）
+│   └── Scripts/          # 包含python.exe和pip.exe
+│
 └── README.md             # 本文件
 ```
+
+### ⚠️ 关于 PythonProject 文件夹
+
+**`PythonProject/` 文件夹是什么？**
+- 这是之前创建的Python虚拟环境目录
+- 包含独立的Python解释器（`Scripts/python.exe`）和包管理工具（`Scripts/pip.exe`）
+
+**是否需要？**
+- ❌ **不需要**：项目可以直接使用系统Python运行，不依赖虚拟环境
+- ✅ **可以删除**：如果不需要虚拟环境，可以直接删除此文件夹
+
+**如何删除？**
+1. 关闭所有Python程序和终端
+2. 删除 `PythonProject` 文件夹即可
+3. 删除后不影响项目功能
 
 ## 🚀 快速开始
 
