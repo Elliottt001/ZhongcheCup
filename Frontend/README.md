@@ -9,6 +9,7 @@
 - ⬇️ 一键下载处理结果
 - 🌐 现代化的Web界面
 - 📁 支持大文件上传（最大2GB）
+- 📊 **新增**: 完整的振动分析可视化界面（`analyzer.py`）
 
 ## 快速开始
 
@@ -28,12 +29,24 @@ pip install -r requirements.txt
 
 ### 3. 启动应用
 
+#### 视频预处理界面（app.py）
+
 ```bash
 # Windows PowerShell
 streamlit run app.py --server.maxUploadSize=2048
 
-# 或使用Python模块方式（如果上面命令不工作）
+# 或使用Python模块方式
 python -m streamlit run app.py --server.maxUploadSize=2048
+```
+
+#### 振动分析界面（analyzer.py）⭐ 新增
+
+```bash
+# Windows PowerShell
+streamlit run analyzer.py --server.maxUploadSize=2048
+
+# 或使用Python模块方式
+python -m streamlit run analyzer.py --server.maxUploadSize=2048
 ```
 
 ### 4. 访问应用
@@ -41,6 +54,13 @@ python -m streamlit run app.py --server.maxUploadSize=2048
 应用启动后，在浏览器中访问：
 - **本地URL**: http://localhost:8501
 - 如果端口被占用，会自动使用其他端口
+
+### 5. 两个界面的关系
+
+1. **app.py** - 视频预处理：处理视频文件，生成npz文件
+2. **analyzer.py** - 振动分析：接收npz文件，进行完整分析并可视化展示
+
+**工作流程**: 视频 → app.py → npz文件 → analyzer.py → 分析结果
 
 ### ⚠️ 关于项目中的 PythonProject 文件夹
 
@@ -79,9 +99,32 @@ from Backend.WindVibAnalysis.main_workflow import run_image_analysis_from_npz
 result = run_image_analysis_from_npz("your_file.npz")
 ```
 
-## 在Backend中使用
+## 振动分析可视化界面（analyzer.py）⭐
 
-下载npz文件后，可以在Backend中直接使用：
+### 功能特点
+
+- 📤 **上传npz文件**: 直接上传Frontend生成的npz文件
+- 🔄 **自动分析**: 集成Backend图像分析和信号分析
+- 📊 **可视化展示**: 
+  - 时域图（位移时间序列）
+  - 频域图（频谱分析）
+  - 关键指标（主频、峰峰值、RMS）
+  - 异常检测
+- 💾 **结果导出**: 导出CSV格式的统计数据
+
+### 使用方法
+
+1. 启动分析界面：`streamlit run analyzer.py --server.maxUploadSize=2048`
+2. 上传npz文件（由app.py生成）
+3. 配置分析参数（可选，侧边栏）
+4. 点击"开始分析"
+5. 查看可视化结果
+
+详细说明请参考：[分析界面使用说明.md](分析界面使用说明.md)
+
+### 在Backend中使用（编程方式）
+
+下载npz文件后，也可以在Backend中直接使用：
 
 ```python
 from WindVibAnalysis.main_workflow import run_image_analysis_from_npz
