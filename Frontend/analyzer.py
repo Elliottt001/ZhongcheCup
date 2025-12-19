@@ -353,6 +353,66 @@ if uploaded_file is not None:
                     st.success("✅ 分析完成！")
                     st.balloons()
                     
+                except ValueError as e:
+                    error_msg = str(e)
+                    add_log(f"❌ 分析失败: {error_msg}")
+                    
+                    # 提供针对性的错误提示
+                    if "AruCo标记物检测失败" in error_msg or "Signal contains no finite values" in error_msg:
+                        st.error("❌ 标记物检测失败")
+                        st.markdown("### 🔍 问题诊断")
+                        st.markdown("""
+                        **错误原因**：视频中未检测到AruCo标记物，导致无法提取位移数据。
+                        
+                        **可能的原因和解决方案**：
+                        
+                        1. **视频中没有AruCo标记物**
+                           - 确保视频中包含AruCo标记物
+                           - 标记物应该清晰可见，不被遮挡
+                        
+                        2. **标记物ID配置不正确**
+                           - 当前配置的标记物ID：**42**
+                           - 检查配置文件：`Backend/WindVibAnalysis/config/camera_params.json`
+                           - 确认视频中标记物的实际ID是否匹配
+                        
+                        3. **标记物字典类型不匹配**
+                           - 当前使用：**DICT_4X4_50**
+                           - 确认视频中标记物使用的字典类型
+                        
+                        4. **标记物质量问题**
+                           - 标记物太小或太模糊
+                           - 光照不足或对比度不够
+                           - 标记物被遮挡或部分可见
+                        
+                        5. **视频质量问题**
+                           - 分辨率太低
+                           - 视频模糊或抖动严重
+                           - 编码格式不兼容
+                        
+                        **建议操作**：
+                        - 检查视频中是否确实存在AruCo标记物
+                        - 查看配置文件中的`marker_id`设置
+                        - 尝试使用其他包含清晰标记物的视频
+                        - 如果标记物ID不是42，请修改配置文件
+                        """)
+                        
+                        with st.expander("📝 如何修改标记物ID"):
+                            st.code("""
+# 编辑文件：Backend/WindVibAnalysis/config/camera_params.json
+
+{
+  "tracking": {
+    "marker_id": 42,  # 修改为视频中实际的标记物ID
+    "subpix_win_size": 11
+  }
+}
+                            """, language="json")
+                    else:
+                        st.error(f"❌ 分析过程中发生错误: {error_msg}")
+                    
+                    with st.expander("🔍 查看详细错误信息"):
+                        st.exception(e)
+                        
                 except Exception as e:
                     add_log(f"❌ 分析失败: {str(e)}")
                     st.error(f"❌ 分析过程中发生错误: {str(e)}")

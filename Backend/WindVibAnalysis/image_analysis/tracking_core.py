@@ -117,6 +117,8 @@ def generate_pixel_series(frame_list: List[np.ndarray], config: TrackingConfig) 
     # 所以我们需要记录第一帧成功检测的位置作为基准
     
     x0, y0 = None, None
+    detection_count = 0  # 成功检测的帧数
+    total_frames = len(frame_list)
     
     for i, frame in enumerate(frame_list):
         x, y = tracker.track_marker_subpix(frame)
@@ -127,6 +129,8 @@ def generate_pixel_series(frame_list: List[np.ndarray], config: TrackingConfig) 
             x_list.append(np.nan)
             y_list.append(np.nan)
             continue
+        else:
+            detection_count += 1
             
         if x0 is None:
             x0, y0 = x, y
@@ -137,5 +141,22 @@ def generate_pixel_series(frame_list: List[np.ndarray], config: TrackingConfig) 
         
         x_list.append(dx)
         y_list.append(dy)
-        
+    
+    # 检查检测率
+    detection_rate = detection_count / total_frames if total_frames > 0 else 0.0
+    
+    if detection_count == 0:
+        raise ValueError(
+            f"AruCo标记物检测失败：在 {total_frames} 帧中未检测到任何标记物。\n"
+            f"可能原因：\n"
+            f"1. 视频中没有AruCo标记物（ID={config.marker_id}）\n"
+            f"2. 标记物ID配置不正确（当前配置：{config.marker_id}）\n"
+            f"3. 标记物字典类型不匹配（当前使用：DICT_4X4_50）\n"
+            f"4. 标记物太小、太模糊或被遮挡\n"
+            f"5. 视频质量问题或光照不足\n"
+            f"建议：检查配置文件中的marker_id设置，确认视频中确实存在对应的AruCo标记物。"
+        )
+    elif detection_rate < 0.1:  # 检测率低于10%
+        print(f"警告：AruCo标记物检测率较低 ({detection_rate*100:.1f}%)，仅 {detection_count}/{total_frames} 帧成功检测。")
+    
     return np.array(x_list), np.array(y_list)
