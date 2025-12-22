@@ -13,93 +13,55 @@ class MarkerTracker:
     def __init__(self, config: TrackingConfig):
         self.config = config
         
-        # 检测OpenCV版本并选择合适的AruCo API
-        self.opencv_version = cv2.__version__
-        self.use_new_api = False
+        # 红色在 HSV 空间中的两个范围（红色跨越了 0 度/180 度）
+        self.red_lower1 = np.array([0, 100, 100])
+        self.red_upper1 = np.array([10, 255, 255])
+        self.red_lower2 = np.array([160, 100, 100])
+        self.red_upper2 = np.array([180, 255, 255])
         
-        try:
-            # 尝试使用新API (OpenCV 4.7+)
-            if hasattr(cv2.aruco, 'ArucoDetector'):
-                self.aruco_dict = cv2.aruco.getPredefinedDictionary(cv2.aruco.DICT_4X4_50)
-                self.aruco_params = cv2.aruco.DetectorParameters()
-                self.aruco_detector = cv2.aruco.ArucoDetector(self.aruco_dict, self.aruco_params)
-                self.use_new_api = True
-            else:
-                # 使用旧API (OpenCV 4.6及以下)
-                self.aruco_dict = cv2.aruco.getPredefinedDictionary(cv2.aruco.DICT_4X4_50)
-                self.aruco_params = cv2.aruco.DetectorParameters()
-                self.use_new_api = False
-        except Exception:
-            # 如果都失败，尝试直接使用旧API
-            self.aruco_dict = cv2.aruco.getPredefinedDictionary(cv2.aruco.DICT_4X4_50)
-            self.aruco_params = cv2.aruco.DetectorParameters()
-            self.use_new_api = False
-        
-        # Subpixel criteria
-        self.criteria = (cv2.TERM_CRITERIA_EPS + cv2.TERM_CRITERIA_MAX_ITER, 
-                         self.config.subpix_criteria_max_iter, 
-                         self.config.subpix_criteria_eps)
+        # 记录上一帧的位置，用于局部搜索（可选优化）
+        self.last_pos = None
 
     def track_marker_subpix(self, frame: np.ndarray) -> Tuple[float, float]:
         """
-        在单个帧中定位并返回标记物的亚像素中心坐标 (x, y)。
-        如果未找到标记，返回 (np.nan, np.nan)。
+        通过颜色分割定位红色条形标记，并返回亚像素质心坐标 (x, y)。
         """
         if frame is None:
             return np.nan, np.nan
 
-        gray = frame
-        if len(frame.shape) == 3:
-            gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+        # 1. 转换到 HSV 空间
+        hsv = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
 
-        # 1. AruCo 粗略检测 - 兼容新旧API
-        try:
-            if self.use_new_api:
-                # 新API (OpenCV 4.7+)
-                corners, ids, rejected = self.aruco_detector.detectMarkers(gray)
-            else:
-                # 旧API (OpenCV 4.6及以下)
-                corners, ids, rejected = cv2.aruco.detectMarkers(
-                    gray, self.aruco_dict, parameters=self.aruco_params
-                )
-        except AttributeError:
-            # 如果新API不可用，回退到旧API
-            try:
-                corners, ids, rejected = cv2.aruco.detectMarkers(
-                    gray, self.aruco_dict, parameters=self.aruco_params
-                )
-            except Exception as e:
-                # 如果都失败，返回NaN
-                return np.nan, np.nan
+        # 2. 创建红色掩膜（处理红色跨越 0/180 的情况）
+        mask1 = cv2.inRange(hsv, self.red_lower1, self.red_upper1)
+        mask2 = cv2.inRange(hsv, self.red_lower2, self.red_upper2)
+        mask = cv2.addWeighted(mask1, 1.0, mask2, 1.0, 0.0)
 
-        if ids is None or len(ids) == 0:
+        # 3. 形态学处理：去除噪声并填充空洞
+        kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (5, 5))
+        mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, kernel)
+        mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel)
+
+        # 4. 寻找轮廓
+        contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        
+        if not contours:
             return np.nan, np.nan
 
-        # 找到指定 ID 的标记
-        target_idx = -1
-        for i, marker_id in enumerate(ids):
-            if marker_id[0] == self.config.marker_id:
-                target_idx = i
-                break
+        # 5. 找到面积最大的轮廓（假设它是我们的红色条形标记）
+        max_cnt = max(contours, key=cv2.contourArea)
         
-        if target_idx == -1:
+        # 过滤掉太小的噪声
+        if cv2.contourArea(max_cnt) < 50:
             return np.nan, np.nan
 
-        # 获取四个角点 (1, 4, 2) -> (4, 2)
-        marker_corners = corners[target_idx][0]
-
-        # 2. 亚像素优化
-        # cornerSubPix 需要 float32 输入
-        marker_corners_sub = marker_corners.astype(np.float32)
-        
-        win_size = (self.config.subpix_win_size, self.config.subpix_win_size)
-        zero_zone = (self.config.subpix_zero_zone, self.config.subpix_zero_zone)
-        
-        cv2.cornerSubPix(gray, marker_corners_sub, win_size, zero_zone, self.criteria)
-
-        # 3. 计算中心点 (取四个角点的重心)
-        center_x = np.mean(marker_corners_sub[:, 0])
-        center_y = np.mean(marker_corners_sub[:, 1])
+        # 6. 计算质心（利用矩 Moments 获得亚像素精度）
+        M = cv2.moments(max_cnt)
+        if M["m00"] == 0:
+            return np.nan, np.nan
+            
+        center_x = M["m10"] / M["m00"]
+        center_y = M["m01"] / M["m00"]
 
         return float(center_x), float(center_y)
 
@@ -147,14 +109,13 @@ def generate_pixel_series(frame_list: List[np.ndarray], config: TrackingConfig) 
     
     if detection_count == 0:
         raise ValueError(
-            f"AruCo标记物检测失败：在 {total_frames} 帧中未检测到任何标记物。\n"
+            f"红色标记物检测失败：在 {total_frames} 帧中未检测到任何红色区域。\n"
             f"可能原因：\n"
-            f"1. 视频中没有AruCo标记物（ID={config.marker_id}）\n"
-            f"2. 标记物ID配置不正确（当前配置：{config.marker_id}）\n"
-            f"3. 标记物字典类型不匹配（当前使用：DICT_4X4_50）\n"
-            f"4. 标记物太小、太模糊或被遮挡\n"
-            f"5. 视频质量问题或光照不足\n"
-            f"建议：检查配置文件中的marker_id设置，确认视频中确实存在对应的AruCo标记物。"
+            f"1. 视频中没有明显的红色标记物\n"
+            f"2. 红色颜色范围（HSV）不匹配当前光照条件\n"
+            f"3. 标记物太小被过滤掉了（当前阈值：50像素面积）\n"
+            f"4. 视频质量问题或光照不足导致颜色失真\n"
+            f"建议：检查 tracking_core.py 中的 red_lower/upper 阈值设置。"
         )
     elif detection_rate < 0.1:  # 检测率低于10%
         print(f"警告：AruCo标记物检测率较低 ({detection_rate*100:.1f}%)，仅 {detection_count}/{total_frames} 帧成功检测。")

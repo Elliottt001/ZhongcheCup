@@ -33,82 +33,16 @@ try:
 except ImportError as e:
     st.warning(f"⚠️ Backend图像分析模块导入失败: {e}")
 
-# 使用importlib避免与Python内置signal模块冲突
-# 方法：使用runpy模块或直接执行文件
+# 导入信号分析模块
 try:
-    # 确保backend_path在sys.path中
-    if backend_path not in sys.path:
-        sys.path.insert(0, backend_path)
-    
-    signal_module_path = os.path.join(backend_path, 'signal.py')
-    
-    if not os.path.exists(signal_module_path):
-        st.warning(f"⚠️ Backend信号分析模块文件不存在: {signal_module_path}")
-    else:
-        # 使用绝对路径
-        signal_module_path = os.path.abspath(signal_module_path)
-        
-        try:
-            # 方法：使用importlib.machinery直接加载
-            from importlib import machinery
-            
-            # 创建SourceFileLoader
-            loader = machinery.SourceFileLoader('backend_signal', signal_module_path)
-            
-            # 创建模块
-            backend_signal = loader.load_module('backend_signal')
-            
-            # 检查模块是否有需要的类/函数
-            if hasattr(backend_signal, 'DisplacementSeries') and hasattr(backend_signal, 'analyze_displacement_series'):
-                SignalDisplacementSeries = backend_signal.DisplacementSeries
-                analyze_displacement_series = backend_signal.analyze_displacement_series
-                SIGNAL_AVAILABLE = True
-            else:
-                missing = []
-                if not hasattr(backend_signal, 'DisplacementSeries'):
-                    missing.append('DisplacementSeries')
-                if not hasattr(backend_signal, 'analyze_displacement_series'):
-                    missing.append('analyze_displacement_series')
-                st.warning(f"⚠️ Backend信号分析模块缺少: {', '.join(missing)}")
-                    
-        except Exception as load_error:
-            # 如果SourceFileLoader失败，尝试使用exec
-            try:
-                with open(signal_module_path, 'r', encoding='utf-8') as f:
-                    code = f.read()
-                
-                # 创建命名空间
-                namespace = {'__name__': 'backend_signal', '__file__': signal_module_path}
-                namespace['__path__'] = [os.path.dirname(signal_module_path)]
-                
-                # 执行代码
-                exec(code, namespace)
-                
-                # 检查是否有需要的类/函数
-                if 'DisplacementSeries' in namespace and 'analyze_displacement_series' in namespace:
-                    SignalDisplacementSeries = namespace['DisplacementSeries']
-                    analyze_displacement_series = namespace['analyze_displacement_series']
-                    SIGNAL_AVAILABLE = True
-                else:
-                    missing = []
-                    if 'DisplacementSeries' not in namespace:
-                        missing.append('DisplacementSeries')
-                    if 'analyze_displacement_series' not in namespace:
-                        missing.append('analyze_displacement_series')
-                    st.warning(f"⚠️ Backend信号分析模块缺少: {', '.join(missing)}")
-            except Exception as exec_error:
-                import traceback
-                error_details = traceback.format_exc()
-                st.warning(f"⚠️ 加载模块时出错: {exec_error}")
-                with st.expander("查看详细错误信息"):
-                    st.code(error_details)
-                
-except Exception as e:
-    import traceback
-    error_details = traceback.format_exc()
+    import signal_analysis
+    SignalDisplacementSeries = signal_analysis.DisplacementSeries
+    analyze_displacement_series = signal_analysis.analyze_displacement_series
+    SIGNAL_AVAILABLE = True
+except ImportError as e:
     st.warning(f"⚠️ Backend信号分析模块导入失败: {e}")
-    with st.expander("查看详细错误信息"):
-        st.code(error_details)
+except Exception as e:
+    st.warning(f"⚠️ 加载信号分析模块时发生错误: {e}")
 
 # --- 页面配置 ---
 st.set_page_config(

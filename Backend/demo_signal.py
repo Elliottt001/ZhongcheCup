@@ -1,4 +1,4 @@
-from signal import DisplacementSeries, analyze_displacement_series
+from signal_analysis import DisplacementSeries, analyze_displacement_series
 
 import numpy as np
 
